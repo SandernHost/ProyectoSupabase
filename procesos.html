@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>...</head>
+<body>
+  <header>...</header>
+  <main>
+    <h1 class="page-title">Procesos</h1>
+    <button class="btn" id="btnNuevo">Nuevo Proceso</button>
+    <div class="table-responsive">
+      <table id="tablaProcesos">
+        <thead><tr><th>Tipo</th><th>Lote Origen</th><th>Lote Destino</th><th>Inicio</th><th>Fin</th><th>Cantidad</th><th>Responsable</th><th>Acciones</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <!-- Modal -->
+    <div id="formModal" style="display:none;">
+      <div class="form-container">
+        <h3 id="modalTitle">Nuevo Proceso</h3>
+        <form id="procesoForm">
+          <input type="hidden" id="procesoId">
+          <div class="form-group">
+            <label>Tipo proceso *</label>
+            <select id="tipo_proceso" required>
+              <option value="selección">Selección</option>
+              <option value="lavado">Lavado</option>
+              <option value="cortado">Cortado</option>
+              <option value="pulpeado">Pulpeado</option>
+              <option value="congelado">Congelado</option>
+              <option value="empacado">Empacado</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Lote origen *</label>
+            <select id="lote_origen_id" required></select>
+          </div>
+          <div class="form-group">
+            <label>Lote destino (opcional)</label>
+            <select id="lote_destino_id"></select>
+          </div>
+          <div class="form-group">
+            <label>Fecha inicio *</label>
+            <input type="datetime-local" id="fecha_inicio" required>
+          </div>
+          <div class="form-group">
+            <label>Fecha fin</label>
+            <input type="datetime-local" id="fecha_fin">
+          </div>
+          <div class="form-group">
+            <label>Cantidad procesada</label>
+            <input type="number" id="cantidad_procesada" step="0.01">
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="btn">Guardar</button>
+            <button type="button" class="btn btn-secondary" onclick="cerrarModal()">Cancelar</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    let lotes;
+
+    async function cargarProcesos() {
+      const { data, error } = await supabaseClient
+        .from('procesos')
+        .select(`
+          *,
+          origen:lote_origen_id (numero_lote),
+          destino:lote_destino_id (numero_lote)
+        `)
+        .order('fecha_inicio', { ascending: false });
+      if (error) throw error;
+      const tbody = document.querySelector('#tablaProcesos tbody');
+      tbody.innerHTML = data.map(p => `
+        <tr>
+          <td>${p.tipo_proceso}</td>
+          <td>${p.origen?.numero_lote}</td>
+          <td>${p.destino?.numero_lote || '-'}</td>
+          <td>${new Date(p.fecha_inicio).toLocaleString()}</td>
+          <td>${p.fecha_fin ? new Date(p.fecha_fin).toLocaleString() : '-'}</td>
+          <td>${p.cantidad_procesada ?? '-'}</td>
+          <td>${p.usuario_responsable_id ? p.usuario_responsable_id.slice(0,8) : '-'}</td>
+          <td>
+            <button onclick="editarProceso('${p.id}')">✏️</button>
+            <button onclick="eliminarProceso('${p.id}')">🗑️</button>
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    async function cargarSelectLotes() {
+      lotes = await fetchAll('lotes', { select: 'id, numero_lote' });
+      const selectOrigen = document.getElementById('lote_origen_id');
+      selectOrigen.innerHTML = '<option value="">Seleccione</option>' + lotes.map(l => `<option value="${l.id}">${l.numero_lote}</option>`);
+      const selectDestino = document.getElementById('lote_destino_id');
+      selectDestino.innerHTML = '<option value="">Ninguno</option>' + lotes.map(l => `<option value="${l.id}">${l.numero_lote}</option>`);
+    }
+
+    window.editarProceso = async (id) => {
+      const p = await fetchById('procesos', id);
+      document.getElementById('procesoId').value = p.id;
+      document.getElementById('tipo_proceso').value = p.tipo_proceso;
+      document.getElementById('lote_origen_id').value = p.lote_origen_id;
+      document.getElementById('lote_destino_id').value = p.lote_destino_id || '';
+      document.getElementById('fecha_inicio').value = p.fecha_inicio.slice(0,16);
+      document.getElementById('fecha_fin').value = p.fecha_fin ? p.fecha_fin.slice(0,16) : '';
+      document.getElementById('cantidad_procesada').value = p.cantidad_procesada || '';
+      document.getElementById('modalTitle').textContent = 'Editar Proceso';
+      document.getElementById('formModal').style.display = 'flex';
+    };
+
+    window.eliminarProceso = async (id) => {
+      if (confirm('¿Eliminar proceso?')) {
+        await deleteRecord('procesos', id);
+        cargarProcesos();
+      }
+    };
+
+    document.getElementById('btnNuevo').addEventListener('click', () => {
+      document.getElementById('procesoForm').reset();
+      document.getElementById('procesoId').value = '';
+      document.getElementById('modalTitle').textContent = 'Nuevo Proceso';
+      document.getElementById('formModal').style.display = 'flex';
+    });
+
+    window.cerrarModal = () => document.getElementById('formModal').style.display = 'none';
+
+    document.getElementById('procesoForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const session = await getSession();
+      const formData = {
+        tipo_proceso: document.getElementById('tipo_proceso').value,
+        lote_origen_id: document.getElementById('lote_origen_id').value,
+        lote_destino_id: document.getElementById('lote_destino_id').value || null,
+        fecha_inicio: document.getElementById('fecha_inicio').value,
+        fecha_fin: document.getElementById('fecha_fin').value || null,
+        cantidad_procesada: document.getElementById('cantidad_procesada').value ? parseFloat(document.getElementById('cantidad_procesada').value) : null,
+        usuario_responsable_id: session.user.id
+      };
+      try {
+        const id = document.getElementById('procesoId').value;
+        if (id) await updateRecord('procesos', id, formData);
+        else await insertRecord('procesos', formData);
+        cerrarModal();
+        cargarProcesos();
+      } catch (error) {
+        alert('Error: ' + error.message);
+      }
+    });
+
+    async function init() {
+      const session = await getSession();
+      if (!session) window.location.href = 'index.html';
+      document.getElementById('userEmail').textContent = session.user.email;
+      await cargarSelectLotes();
+      cargarProcesos();
+    }
+    init();
+  </script>
+</body>
+</html>

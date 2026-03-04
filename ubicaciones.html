@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ubicaciones - Trazabilidad</title>
+  <link rel="stylesheet" href="css/estilo.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/config.js"></script>
+  <script src="js/supabase.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/api.js"></script>
+</head>
+<body>
+  <header> <!-- mismo header que productos.html, activar clase "active" en Ubicaciones --> </header>
+  <main>
+    <h1 class="page-title">Ubicaciones</h1>
+    <button class="btn" id="btnNuevo">Nueva Ubicación</button>
+    <div class="table-responsive">
+      <table id="tablaUbicaciones">
+        <thead><tr><th>Código</th><th>Nombre</th><th>Tipo</th><th>Capacidad</th><th>Acciones</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <!-- Modal -->
+    <div id="formModal" style="display:none; ...">
+      <div class="form-container">
+        <h3 id="modalTitle">Nueva Ubicación</h3>
+        <form id="ubicacionForm">
+          <input type="hidden" id="ubicacionId">
+          <div class="form-group">
+            <label>Código *</label>
+            <input type="text" id="codigo" required>
+          </div>
+          <div class="form-group">
+            <label>Nombre *</label>
+            <input type="text" id="nombre" required>
+          </div>
+          <div class="form-group">
+            <label>Tipo</label>
+            <select id="tipo">
+              <option value="">Seleccione</option>
+              <option value="bodega">Bodega</option>
+              <option value="cámara">Cámara</option>
+              <option value="muelle">Muelle</option>
+              <option value="zona_cuarentena">Zona cuarentena</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Capacidad máxima</label>
+            <input type="number" id="capacidad_maxima" step="0.01">
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="btn">Guardar</button>
+            <button type="button" class="btn btn-secondary" onclick="cerrarModal()">Cancelar</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    async function cargarUbicaciones() {
+      const ubicaciones = await fetchAll('ubicaciones');
+      const tbody = document.querySelector('#tablaUbicaciones tbody');
+      tbody.innerHTML = ubicaciones.map(u => `
+        <tr>
+          <td>${u.codigo}</td>
+          <td>${u.nombre}</td>
+          <td>${u.tipo || '-'}</td>
+          <td>${u.capacidad_maxima || '-'}</td>
+          <td>
+            <button onclick="editarUbicacion('${u.id}')">✏️</button>
+            <button onclick="eliminarUbicacion('${u.id}')">🗑️</button>
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    window.editarUbicacion = async (id) => {
+      const u = await fetchById('ubicaciones', id);
+      document.getElementById('ubicacionId').value = u.id;
+      document.getElementById('codigo').value = u.codigo;
+      document.getElementById('nombre').value = u.nombre;
+      document.getElementById('tipo').value = u.tipo || '';
+      document.getElementById('capacidad_maxima').value = u.capacidad_maxima || '';
+      document.getElementById('modalTitle').textContent = 'Editar Ubicación';
+      document.getElementById('formModal').style.display = 'flex';
+    };
+
+    window.eliminarUbicacion = async (id) => {
+      if (confirm('¿Eliminar ubicación? Puede afectar lotes y movimientos.')) {
+        await deleteRecord('ubicaciones', id);
+        cargarUbicaciones();
+      }
+    };
+
+    document.getElementById('btnNuevo').addEventListener('click', () => {
+      document.getElementById('ubicacionForm').reset();
+      document.getElementById('ubicacionId').value = '';
+      document.getElementById('modalTitle').textContent = 'Nueva Ubicación';
+      document.getElementById('formModal').style.display = 'flex';
+    });
+
+    window.cerrarModal = () => document.getElementById('formModal').style.display = 'none';
+
+    document.getElementById('ubicacionForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const formData = {
+        codigo: document.getElementById('codigo').value,
+        nombre: document.getElementById('nombre').value,
+        tipo: document.getElementById('tipo').value || null,
+        capacidad_maxima: document.getElementById('capacidad_maxima').value ? parseFloat(document.getElementById('capacidad_maxima').value) : null
+      };
+      try {
+        const id = document.getElementById('ubicacionId').value;
+        if (id) await updateRecord('ubicaciones', id, formData);
+        else await insertRecord('ubicaciones', formData);
+        cerrarModal();
+        cargarUbicaciones();
+      } catch (error) {
+        alert('Error: ' + error.message);
+      }
+    });
+
+    async function init() {
+      const session = await getSession();
+      if (!session) window.location.href = 'index.html';
+      document.getElementById('userEmail').textContent = session.user.email;
+      cargarUbicaciones();
+    }
+    init();
+  </script>
+</body>
+</html>

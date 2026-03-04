@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lotes - Trazabilidad</title>
+  <link rel="stylesheet" href="css/estilo.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/config.js"></script>
+  <script src="js/supabase.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/api.js"></script>
+</head>
+<body>
+  <header>... (igual que dashboard, con clase active en Lotes) ...</header>
+
+  <main>
+    <h1 class="page-title">Gestión de Lotes</h1>
+    <button class="btn" id="btnNuevo">Nuevo Lote</button>
+    
+    <div class="table-responsive" style="margin-top:1rem;">
+      <table id="tablaLotes">
+        <thead>
+          <tr>
+            <th>N° Lote</th><th>Producto</th><th>Proveedor</th><th>Cantidad</th><th>Ubicación</th><th>Estado</th><th>Acciones</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <!-- Modal simple para formulario (usaremos un div oculto) -->
+    <div id="formModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); justify-content:center; align-items:center;">
+      <div class="form-container" style="max-width:500px; background:white; margin:auto;">
+        <h3 id="modalTitle">Nuevo Lote</h3>
+        <form id="loteForm">
+          <input type="hidden" id="loteId">
+          <div class="form-group">
+            <label>Número de lote</label>
+            <input type="text" id="numero_lote" required>
+          </div>
+          <div class="form-group">
+            <label>Producto</label>
+            <select id="producto_id" required></select>
+          </div>
+          <div class="form-group">
+            <label>Fecha ingreso</label>
+            <input type="date" id="fecha_ingreso" required>
+          </div>
+          <div class="form-group">
+            <label>Proveedor</label>
+            <input type="text" id="proveedor">
+          </div>
+          <div class="form-group">
+            <label>Cantidad inicial</label>
+            <input type="number" id="cantidad_inicial" step="0.01" required>
+          </div>
+          <div class="form-group">
+            <label>Unidad medida</label>
+            <select id="unidad_medida" required>
+              <option value="kg">kg</option>
+              <option value="lb">lb</option>
+              <option value="caja">caja</option>
+              <option value="unidad">unidad</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Ubicación actual</label>
+            <select id="ubicacion_actual_id"></select>
+          </div>
+          <div class="form-group">
+            <label>Estado</label>
+            <select id="estado">
+              <option value="activo">Activo</option>
+              <option value="en_cuarentena">En cuarentena</option>
+              <option value="rechazado">Rechazado</option>
+              <option value="procesado">Procesado</option>
+              <option value="despachado">Despachado</option>
+            </select>
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="btn">Guardar</button>
+            <button type="button" class="btn btn-secondary" onclick="cerrarModal()">Cancelar</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    let productos = [], ubicaciones = [];
+
+    async function cargarLotes() {
+      try {
+        const lotes = await fetchAll('lotes', { 
+          select: '*, producto:producto_id(*), ubicacion:ubicacion_actual_id(*)' 
+        });
+        const tbody = document.querySelector('#tablaLotes tbody');
+        tbody.innerHTML = lotes.map(l => `
+          <tr>
+            <td>${l.numero_lote}</td>
+            <td>${l.producto?.nombre || ''} ${l.producto?.variedad || ''}</td>
+            <td>${l.proveedor || ''}</td>
+            <td>${l.cantidad_actual} ${l.unidad_medida}</td>
+            <td>${l.ubicacion?.nombre || 'Sin ubicación'}</td>
+            <td>${l.estado}</td>
+            <td>
+              <button onclick="editarLote('${l.id}')">✏️</button>
+              <button onclick="eliminarLote('${l.id}')">🗑️</button>
+            </td>
+          </tr>
+        `).join('');
+      } catch (error) {
+        console.error(error);
+      }
+    }
+
+    async function cargarSelects() {
+      productos = await fetchAll('productos');
+      ubicaciones = await fetchAll('ubicaciones');
+      
+      const prodSelect = document.getElementById('producto_id');
+      prodSelect.innerHTML = productos.map(p => `<option value="${p.id}">${p.nombre} ${p.variedad || ''}</option>`);
+      
+      const ubiSelect = document.getElementById('ubicacion_actual_id');
+      ubiSelect.innerHTML = '<option value="">Sin ubicación</option>' + 
+        ubicaciones.map(u => `<option value="${u.id}">${u.nombre} (${u.codigo})</option>`);
+    }
+
+    window.editarLote = async (id) => {
+      const lote = await fetchById('lotes', id);
+      document.getElementById('loteId').value = lote.id;
+      document.getElementById('numero_lote').value = lote.numero_lote;
+      document.getElementById('producto_id').value = lote.producto_id;
+      document.getElementById('fecha_ingreso').value = lote.fecha_ingreso;
+      document.getElementById('proveedor').value = lote.proveedor || '';
+      document.getElementById('cantidad_inicial').value = lote.cantidad_inicial;
+      document.getElementById('unidad_medida').value = lote.unidad_medida;
+      document.getElementById('ubicacion_actual_id').value = lote.ubicacion_actual_id || '';
+      document.getElementById('estado').value = lote.estado;
+      document.getElementById('modalTitle').textContent = 'Editar Lote';
+      document.getElementById('formModal').style.display = 'flex';
+    };
+
+    window.eliminarLote = async (id) => {
+      if (confirm('¿Eliminar lote? Esto puede afectar movimientos relacionados.')) {
+        await deleteRecord('lotes', id);
+        cargarLotes();
+      }
+    };
+
+    document.getElementById('btnNuevo').addEventListener('click', () => {
+      document.getElementById('loteForm').reset();
+      document.getElementById('loteId').value = '';
+      document.getElementById('modalTitle').textContent = 'Nuevo Lote';
+      document.getElementById('formModal').style.display = 'flex';
+    });
+
+    window.cerrarModal = () => {
+      document.getElementById('formModal').style.display = 'none';
+    };
+
+    document.getElementById('loteForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const formData = {
+        numero_lote: document.getElementById('numero_lote').value,
+        producto_id: document.getElementById('producto_id').value,
+        fecha_ingreso: document.getElementById('fecha_ingreso').value,
+        proveedor: document.getElementById('proveedor').value || null,
+        cantidad_inicial: parseFloat(document.getElementById('cantidad_inicial').value),
+        cantidad_actual: parseFloat(document.getElementById('cantidad_inicial').value), // inicial igual
+        unidad_medida: document.getElementById('unidad_medida').value,
+        ubicacion_actual_id: document.getElementById('ubicacion_actual_id').value || null,
+        estado: document.getElementById('estado').value
+      };
+
+      try {
+        const id = document.getElementById('loteId').value;
+        if (id) {
+          await updateRecord('lotes', id, formData);
+        } else {
+          await insertRecord('lotes', formData);
+        }
+        cerrarModal();
+        cargarLotes();
+      } catch (error) {
+        alert('Error: ' + error.message);
+      }
+    });
+
+    async function init() {
+      const session = await getSession();
+      if (!session) window.location.href = 'index.html';
+      await cargarSelects();
+      cargarLotes();
+    }
+    init();
+  </script>
+</body>
+</html>

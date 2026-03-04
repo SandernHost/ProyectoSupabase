@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>...</head>
+<body>
+  <header>...</header>
+  <main>
+    <h1 class="page-title">Mi Perfil</h1>
+    <div class="form-container" style="max-width:500px;">
+      <form id="perfilForm">
+        <div class="form-group">
+          <label>Correo electrónico (auth)</label>
+          <input type="email" id="email" readonly disabled>
+        </div>
+        <div class="form-group">
+          <label>Nombre completo</label>
+          <input type="text" id="nombre_completo">
+        </div>
+        <div class="form-group">
+          <label>Rol</label>
+          <input type="text" id="rol" readonly disabled>
+        </div>
+        <div class="form-group">
+          <label>Teléfono</label>
+          <input type="text" id="telefono">
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn">Actualizar Perfil</button>
+        </div>
+      </form>
+    </div>
+  </main>
+
+  <script>
+    async function cargarPerfil() {
+      const session = await getSession();
+      if (!session) return;
+      document.getElementById('email').value = session.user.email;
+
+      // Buscar perfil en perfiles_usuarios
+      const { data, error } = await supabaseClient
+        .from('perfiles_usuarios')
+        .select('*')
+        .eq('id', session.user.id)
+        .single();
+
+      if (error && error.code !== 'PGRST116') { // PGRST116 = no encontrado
+        console.error(error);
+      }
+      if (data) {
+        document.getElementById('nombre_completo').value = data.nombre_completo || '';
+        document.getElementById('rol').value = data.rol || '';
+        document.getElementById('telefono').value = data.telefono || '';
+      } else {
+        // Si no existe perfil, se creará al actualizar
+        document.getElementById('rol').value = 'operario'; // valor por defecto
+      }
+    }
+
+    document.getElementById('perfilForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const session = await getSession();
+      const userId = session.user.id;
+      const formData = {
+        id: userId,
+        nombre_completo: document.getElementById('nombre_completo').value || null,
+        telefono: document.getElementById('telefono').value || null,
+        // El rol no se actualiza desde este formulario (solo admin podría)
+      };
+
+      try {
+        // Upsert: si existe, actualiza; si no, inserta
+        const { error } = await supabaseClient
+          .from('perfiles_usuarios')
+          .upsert(formData, { onConflict: 'id' });
+        if (error) throw error;
+        alert('Perfil actualizado correctamente');
+      } catch (error) {
+        alert('Error: ' + error.message);
+      }
+    });
+
+    async function init() {
+      const session = await getSession();
+      if (!session) window.location.href = 'index.html';
+      document.getElementById('userEmail').textContent = session.user.email;
+      cargarPerfil();
+    }
+    init();
+  </script>
+</body>
+</html>

@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>...</head>
+<body>
+  <header>...</header>
+  <main>
+    <h1 class="page-title">Controles de Calidad</h1>
+    <button class="btn" id="btnNuevo">Nuevo Control</button>
+    <div class="table-responsive">
+      <table id="tablaCalidad">
+        <thead><tr><th>Lote</th><th>Fecha</th><th>Inspector</th><th>T°C</th><th>Humedad</th><th>Brix</th><th>Resultado</th><th>Obs.</th><th>Acciones</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <!-- Modal -->
+    <div id="formModal" style="display:none;">
+      <div class="form-container">
+        <h3 id="modalTitle">Nuevo Control de Calidad</h3>
+        <form id="calidadForm">
+          <input type="hidden" id="controlId">
+          <div class="form-group">
+            <label>Lote *</label>
+            <select id="lote_id" required></select>
+          </div>
+          <div class="form-group">
+            <label>Fecha control</label>
+            <input type="datetime-local" id="fecha_control" required>
+          </div>
+          <div class="form-group">
+            <label>Temperatura (°C)</label>
+            <input type="number" id="temperatura" step="0.1">
+          </div>
+          <div class="form-group">
+            <label>Humedad (%)</label>
+            <input type="number" id="humedad" step="0.1">
+          </div>
+          <div class="form-group">
+            <label>Brix</label>
+            <input type="number" id="brix" step="0.1">
+          </div>
+          <div class="form-group">
+            <label>Defectos visuales</label>
+            <textarea id="defectos_visuales" rows="2"></textarea>
+          </div>
+          <div class="form-group">
+            <label>Resultado *</label>
+            <select id="resultado" required>
+              <option value="aprobado">Aprobado</option>
+              <option value="rechazado">Rechazado</option>
+              <option value="cuarentena">Cuarentena</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Observaciones</label>
+            <textarea id="observaciones" rows="2"></textarea>
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="btn">Guardar</button>
+            <button type="button" class="btn btn-secondary" onclick="cerrarModal()">Cancelar</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    let lotes;
+
+    async function cargarControles() {
+      const { data, error } = await supabaseClient
+        .from('controles_calidad')
+        .select(`
+          *,
+          lote:lote_id (numero_lote)
+        `)
+        .order('fecha_control', { ascending: false });
+      if (error) throw error;
+      const tbody = document.querySelector('#tablaCalidad tbody');
+      tbody.innerHTML = data.map(c => `
+        <tr>
+          <td>${c.lote?.numero_lote}</td>
+          <td>${new Date(c.fecha_control).toLocaleString()}</td>
+          <td>${c.inspector_id ? c.inspector_id.slice(0,8) : '-'}</td>
+          <td>${c.temperatura ?? '-'}</td>
+          <td>${c.humedad ?? '-'}</td>
+          <td>${c.brix ?? '-'}</td>
+          <td>${c.resultado}</td>
+          <td>${c.observaciones || ''}</td>
+          <td>
+            <button onclick="editarControl('${c.id}')">✏️</button>
+            <button onclick="eliminarControl('${c.id}')">🗑️</button>
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    async function cargarSelectLotes() {
+      lotes = await fetchAll('lotes', { select: 'id, numero_lote' });
+      const select = document.getElementById('lote_id');
+      select.innerHTML = '<option value="">Seleccione</option>' + lotes.map(l => `<option value="${l.id}">${l.numero_lote}</option>`);
+    }
+
+    window.editarControl = async (id) => {
+      const c = await fetchById('controles_calidad', id);
+      document.getElementById('controlId').value = c.id;
+      document.getElementById('lote_id').value = c.lote_id;
+      document.getElementById('fecha_control').value = c.fecha_control.slice(0,16);
+      document.getElementById('temperatura').value = c.temperatura ?? '';
+      document.getElementById('humedad').value = c.humedad ?? '';
+      document.getElementById('brix').value = c.brix ?? '';
+      document.getElementById('defectos_visuales').value = c.defectos_visuales || '';
+      document.getElementById('resultado').value = c.resultado;
+      document.getElementById('observaciones').value = c.observaciones || '';
+      document.getElementById('modalTitle').textContent = 'Editar Control';
+      document.getElementById('formModal').style.display = 'flex';
+    };
+
+    window.eliminarControl = async (id) => {
+      if (confirm('¿Eliminar control de calidad?')) {
+        await deleteRecord('controles_calidad', id);
+        cargarControles();
+      }
+    };
+
+    document.getElementById('btnNuevo').addEventListener('click', () => {
+      document.getElementById('calidadForm').reset();
+      document.getElementById('controlId').value = '';
+      document.getElementById('modalTitle').textContent = 'Nuevo Control';
+      document.getElementById('formModal').style.display = 'flex';
+    });
+
+    window.cerrarModal = () => document.getElementById('formModal').style.display = 'none';
+
+    document.getElementById('calidadForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const session = await getSession();
+      const formData = {
+        lote_id: document.getElementById('lote_id').value,
+        fecha_control: document.getElementById('fecha_control').value,
+        inspector_id: session.user.id,
+        temperatura: document.getElementById('temperatura').value ? parseFloat(document.getElementById('temperatura').value) : null,
+        humedad: document.getElementById('humedad').value ? parseFloat(document.getElementById('humedad').value) : null,
+        brix: document.getElementById('brix').value ? parseFloat(document.getElementById('brix').value) : null,
+        defectos_visuales: document.getElementById('defectos_visuales').value || null,
+        resultado: document.getElementById('resultado').value,
+        observaciones: document.getElementById('observaciones').value || null
+      };
+      try {
+        const id = document.getElementById('controlId').value;
+        if (id) await updateRecord('controles_calidad', id, formData);
+        else await insertRecord('controles_calidad', formData);
+        cerrarModal();
+        cargarControles();
+      } catch (error) {
+        alert('Error: ' + error.message);
+      }
+    });
+
+    async function init() {
+      const session = await getSession();
+      if (!session) window.location.href = 'index.html';
+      document.getElementById('userEmail').textContent = session.user.email;
+      await cargarSelectLotes();
+      cargarControles();
+    }
+    init();
+  </script>
+</body>
+</html>

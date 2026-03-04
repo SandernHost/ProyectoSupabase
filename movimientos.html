@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Movimientos - Trazabilidad</title>
+  <link rel="stylesheet" href="css/estilo.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/config.js"></script>
+  <script src="js/supabase.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/api.js"></script>
+</head>
+<body>
+  <header> <!-- menú con active en Movimientos --> </header>
+  <main>
+    <h1 class="page-title">Historial de Movimientos</h1>
+    <button class="btn" id="btnNuevo">Registrar Movimiento</button>
+    <div class="table-responsive">
+      <table id="tablaMovimientos">
+        <thead><tr><th>Lote</th><th>Origen</th><th>Destino</th><th>Cantidad</th><th>Fecha</th><th>Usuario</th><th>Obs.</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <!-- Modal para nuevo movimiento -->
+    <div id="formModal" style="display:none; ...">
+      <div class="form-container">
+        <h3>Registrar Movimiento</h3>
+        <form id="movimientoForm">
+          <div class="form-group">
+            <label>Lote *</label>
+            <select id="lote_id" required></select>
+          </div>
+          <div class="form-group">
+            <label>Ubicación origen</label>
+            <select id="ubicacion_origen_id"></select>
+          </div>
+          <div class="form-group">
+            <label>Ubicación destino *</label>
+            <select id="ubicacion_destino_id" required></select>
+          </div>
+          <div class="form-group">
+            <label>Cantidad *</label>
+            <input type="number" id="cantidad" step="0.01" required>
+          </div>
+          <div class="form-group">
+            <label>Observaciones</label>
+            <textarea id="observaciones" rows="2"></textarea>
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="btn">Guardar</button>
+            <button type="button" class="btn btn-secondary" onclick="cerrarModal()">Cancelar</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    let lotes, ubicaciones;
+
+    async function cargarMovimientos() {
+      const { data, error } = await supabaseClient
+        .from('movimientos')
+        .select(`
+          *,
+          lote:lote_id (numero_lote),
+          origen:ubicacion_origen_id (nombre),
+          destino:ubicacion_destino_id (nombre)
+        `)
+        .order('fecha_movimiento', { ascending: false });
+      if (error) throw error;
+      const tbody = document.querySelector('#tablaMovimientos tbody');
+      tbody.innerHTML = data.map(m => `
+        <tr>
+          <td>${m.lote?.numero_lote}</td>
+          <td>${m.origen?.nombre || '-'}</td>
+          <td>${m.destino?.nombre}</td>
+          <td>${m.cantidad}</td>
+          <td>${new Date(m.fecha_movimiento).toLocaleString()}</td>
+          <td>${m.usuario_id ? m.usuario_id.slice(0,8) : '-'}</td>
+          <td>${m.observaciones || ''}</td>
+        </tr>
+      `).join('');
+    }
+
+    async function cargarSelects() {
+      lotes = await fetchAll('lotes', { select: 'id, numero_lote' });
+      ubicaciones = await fetchAll('ubicaciones', { select: 'id, nombre, codigo' });
+
+      const selectLote = document.getElementById('lote_id');
+      selectLote.innerHTML = '<option value="">Seleccione</option>' + lotes.map(l => `<option value="${l.id}">${l.numero_lote}</option>`);
+
+      const selectOrigen = document.getElementById('ubicacion_origen_id');
+      selectOrigen.innerHTML = '<option value="">Ninguna</option>' + ubicaciones.map(u => `<option value="${u.id}">${u.nombre} (${u.codigo})</option>`);
+
+      const selectDestino = document.getElementById('ubicacion_destino_id');
+      selectDestino.innerHTML = '<option value="">Seleccione</option>' + ubicaciones.map(u => `<option value="${u.id}">${u.nombre} (${u.codigo})</option>`);
+    }
+
+    document.getElementById('btnNuevo').addEventListener('click', () => {
+      document.getElementById('movimientoForm').reset();
+      document.getElementById('formModal').style.display = 'flex';
+    });
+
+    window.cerrarModal = () => document.getElementById('formModal').style.display = 'none';
+
+    document.getElementById('movimientoForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const session = await getSession();
+      const formData = {
+        lote_id: document.getElementById('lote_id').value,
+        ubicacion_origen_id: document.getElementById('ubicacion_origen_id').value || null,
+        ubicacion_destino_id: document.getElementById('ubicacion_destino_id').value,
+        cantidad: parseFloat(document.getElementById('cantidad').value),
+        observaciones: document.getElementById('observaciones').value || null,
+        usuario_id: session.user.id,
+        fecha_movimiento: new Date().toISOString()
+      };
+      try {
+        await insertRecord('movimientos', formData);
+        // Aquí deberías actualizar la ubicación actual del lote (puedes hacerlo con una función RPC en Supabase)
+        // Por simplicidad, omitimos esa actualización; en un sistema real se haría con una transacción o trigger.
+        cerrarModal();
+        cargarMovimientos();
+      } catch (error) {
+        alert('Error: ' + error.message);
+      }
+    });
+
+    async function init() {
+      const session = await getSession();
+      if (!session) window.location.href = 'index.html';
+      document.getElementById('userEmail').textContent = session.user.email;
+      await cargarSelects();
+      cargarMovimientos();
+    }
+    init();
+  </script>
+</body>
+</html>

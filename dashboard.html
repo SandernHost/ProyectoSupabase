@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard - Trazabilidad</title>
+  <link rel="stylesheet" href="css/estilo.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/config.js"></script>
+  <script src="js/supabase.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/api.js"></script>
+</head>
+<body>
+  <header>
+    <nav>
+      <div class="logo"><a href="dashboard.html">🍍 TrazaFruit</a></div>
+      <div class="nav-links">
+        <a href="dashboard.html" class="active">Dashboard</a>
+        <a href="lotes.html">Lotes</a>
+        <a href="productos.html">Productos</a>
+        <a href="ubicaciones.html">Ubicaciones</a>
+        <a href="movimientos.html">Movimientos</a>
+        <a href="calidad.html">Calidad</a>
+        <a href="procesos.html">Procesos</a>
+      </div>
+      <div class="user-info">
+        <span id="userEmail"></span>
+        <button class="btn btn-secondary" onclick="signOut()">Salir</button>
+      </div>
+    </nav>
+  </header>
+
+  <main>
+    <h1 class="page-title">Panel de Control</h1>
+    
+    <div class="card-grid" id="resumenCards">
+      <!-- Se llenará con JS -->
+    </div>
+
+    <h2 style="margin-top:2rem;">Últimos movimientos</h2>
+    <div class="table-responsive">
+      <table id="ultimosMovimientos">
+        <thead>
+          <tr><th>Lote</th><th>Desde</th><th>Hacia</th><th>Cantidad</th><th>Fecha</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </main>
+
+  <script>
+    async function cargarResumen() {
+      try {
+        const lotes = await fetchAll('lotes', { limit: 100 });
+        const activos = lotes.filter(l => l.estado === 'activo').length;
+        const cuarentena = lotes.filter(l => l.estado === 'en_cuarentena').length;
+        const productos = await fetchAll('productos');
+        const ubicaciones = await fetchAll('ubicaciones');
+
+        const cards = document.getElementById('resumenCards');
+        cards.innerHTML = `
+          <div class="card"><h3>Lotes Activos</h3><div class="number">${activos}</div></div>
+          <div class="card"><h3>En Cuarentena</h3><div class="number">${cuarentena}</div></div>
+          <div class="card"><h3>Productos</h3><div class="number">${productos.length}</div></div>
+          <div class="card"><h3>Ubicaciones</h3><div class="number">${ubicaciones.length}</div></div>
+        `;
+      } catch (error) {
+        console.error(error);
+      }
+    }
+
+    async function cargarUltimosMovimientos() {
+      try {
+        const { data, error } = await supabaseClient
+          .from('movimientos')
+          .select(`
+            id,
+            cantidad,
+            fecha_movimiento,
+            lote:lote_id (numero_lote),
+            origen:ubicacion_origen_id (nombre),
+            destino:ubicacion_destino_id (nombre)
+          `)
+          .order('fecha_movimiento', { ascending: false })
+          .limit(5);
+        if (error) throw error;
+
+        const tbody = document.querySelector('#ultimosMovimientos tbody');
+        tbody.innerHTML = data.map(m => `
+          <tr>
+            <td>${m.lote?.numero_lote || 'N/A'}</td>
+            <td>${m.origen?.nombre || 'N/A'}</td>
+            <td>${m.destino?.nombre || 'N/A'}</td>
+            <td>${m.cantidad}</td>
+            <td>${new Date(m.fecha_movimiento).toLocaleString()}</td>
+          </tr>
+        `).join('');
+      } catch (error) {
+        console.error(error);
+      }
+    }
+
+    async function init() {
+      const session = await getSession();
+      if (!session) {
+        window.location.href = 'index.html';
+        return;
+      }
+      document.getElementById('userEmail').textContent = session.user.email;
+      cargarResumen();
+      cargarUltimosMovimientos();
+    }
+
+    init();
+  </script>
+</body>
+</html>
